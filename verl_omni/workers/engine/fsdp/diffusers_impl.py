@@ -49,7 +49,7 @@ from verl.utils.fsdp_utils import (
     offload_fsdp_model_to_cpu,
     offload_fsdp_optimizer,
 )
-from verl.utils.memory_utils import aggressive_empty_cache
+from verl.utils.memory_utils import aggressive_empty_cache, collect_garbage
 from verl.utils.model import convert_weight_keys
 from verl.utils.py_functional import append_to_dict
 from verl.workers.config import FSDPEngineConfig, FSDPOptimizerConfig
@@ -107,6 +107,7 @@ class DiffusersFSDPEngine(LoRAAdapterMixin, BaseEngine, ABC):
         engine_config: FSDPEngineConfig,
         optimizer_config: FSDPOptimizerConfig,
         checkpoint_config: CheckpointConfig,
+        gc_diagnostics: bool = False,
     ):
         """
         Initialize the DiffusersFSDPEngine.
@@ -122,6 +123,7 @@ class DiffusersFSDPEngine(LoRAAdapterMixin, BaseEngine, ABC):
         self.engine_config = engine_config
         self.optimizer_config = optimizer_config
         self.checkpoint_config = checkpoint_config
+        self.gc_diagnostics = gc_diagnostics
 
         self.mode = None
 
@@ -684,11 +686,24 @@ class DiffusersFSDPEngine(LoRAAdapterMixin, BaseEngine, ABC):
 
         assert device in (device_name, "cpu")
         if device == device_name:
+            if self.mode not in ("train", "eval"):
+                raise RuntimeError(
+                    f"Loading {type(self).__name__} onto {device_name} requires a train or eval context, "
+                    f"but current mode is {self.mode!r}."
+                )
             if model:
                 load_fsdp_model_to_gpu(self.module)
             if optimizer and self.optimizer is not None:
                 load_fsdp_optimizer(self.optimizer, device)
-            gc.collect()
+            gc_setting = (
+                self.engine_config.gc_on_train_device_load
+                if self.mode == "train"
+                else self.engine_config.gc_on_eval_device_load
+            )
+            collect_garbage(
+                gc_setting,
+                diagnostics_point=f"{self.mode}_device_load" if self.gc_diagnostics else None,
+            )
         elif device == "cpu":
             if model:
                 offload_fsdp_model_to_cpu(self.module)
