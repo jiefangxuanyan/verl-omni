@@ -14,6 +14,7 @@
 import logging
 
 import diffusers
+import torch
 from packaging import version
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,27 @@ def apply_flash_attention_3_varlen_hub_fix() -> None:
     if current is None or getattr(current, "_verl_omni_fa3_varlen_patched", False):
         return
 
+    # Keep varlen metadata preparation outside compiled regions. This single
+    # intentional graph boundary avoids two independent full-graph failures:
+    #
+    # 1. For dense queries, Diffusers builds cumulative lengths as
+    #    full((batch_size,), seq_len_q).cumsum(). With dynamic shapes, PyTorch
+    #    2.13's pointless-cumsum Inductor pass mistakes the symbolic fill value
+    #    for a regular scalar while rewriting that expression.
+    # 2. For masked keys, Diffusers computes max_seqlen_k from Tensor data with
+    #    seqlens_k.max().item(). Inside a graph this is an unbacked SymInt, but
+    #    FA3's fake backward uses it in Python control flow to choose window,
+    #    kernel, and workspace behavior, causing GuardOnDataDependentSymNode.
+    #
+    # Eager preparation bypasses the faulty cumsum rewrite and materializes
+    # max_seqlen_q/k as concrete Python integers before FA3 is traced. Dynamo
+    # resumes after this call, so packing, the FA3 custom op, and the rest of
+    # the transformer block remain eligible for regional compilation. Once
+    # upstream fixes both the symbolic cumsum lowering and FA3's handling or
+    # contract for data-dependent max_seqlen values, remove this disable
+    # boundary and revalidate the block with fullgraph=True.
+    prepare_varlen = torch.compiler.disable(_ad._prepare_for_flash_attn_or_sage_varlen)
+
     def _patched_flash_attention_3_varlen_hub(
         query,
         key,
@@ -53,25 +75,14 @@ def apply_flash_attention_3_varlen_hub_fix() -> None:
         return_lse=False,
         _parallel_config=None,
     ):
-        if not _patched_flash_attention_3_varlen_hub._warned:
-            logger.warning(
-                "verl_omni patch applied: diffusers `_flash_attention_3_varlen_hub` has been "
-                "monkey-patched to gather key/value tokens by non-contiguous mask indices "
-                "instead of assuming a contiguous prefix (diffusers==0.38). "
-                "Remove this patch once the fix is upstreamed to diffusers."
-            )
-            _patched_flash_attention_3_varlen_hub._warned = True
-
         batch_size, seq_len_q, _, _ = query.shape
         _, seq_len_kv, _, _ = key.shape
 
         if attn_mask is not None:
             attn_mask = _ad._normalize_attn_mask(attn_mask, batch_size, seq_len_kv)
 
-        (_, _seqlens_k), (cu_seqlens_q, cu_seqlens_k), (max_seqlen_q, max_seqlen_k) = (
-            _ad._prepare_for_flash_attn_or_sage_varlen(
-                batch_size, seq_len_q, seq_len_kv, attn_mask=attn_mask, device=query.device
-            )
+        (_, _seqlens_k), (cu_seqlens_q, cu_seqlens_k), (max_seqlen_q, max_seqlen_k) = prepare_varlen(
+            batch_size, seq_len_q, seq_len_kv, attn_mask=attn_mask, device=query.device
         )
 
         query_packed = query.flatten(0, 1)
@@ -106,7 +117,12 @@ def apply_flash_attention_3_varlen_hub_fix() -> None:
         return (out, lse) if return_lse else out
 
     _patched_flash_attention_3_varlen_hub._verl_omni_fa3_varlen_patched = True
-    _patched_flash_attention_3_varlen_hub._warned = False
 
     registry._backends[backend] = _patched_flash_attention_3_varlen_hub
     _ad._flash_attention_3_varlen_hub = _patched_flash_attention_3_varlen_hub
+    logger.warning(
+        "verl_omni patch applied: diffusers `_flash_attention_3_varlen_hub` has been "
+        "monkey-patched to gather key/value tokens by non-contiguous mask indices "
+        "instead of assuming a contiguous prefix (diffusers==0.38). "
+        "Remove this patch once the fix is upstreamed to diffusers."
+    )

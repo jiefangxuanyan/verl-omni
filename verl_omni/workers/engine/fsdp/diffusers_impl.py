@@ -95,6 +95,50 @@ def _fsdp_param_dtype(module: torch.nn.Module, configured_dtype: torch.dtype) ->
     return configured_dtype
 
 
+def _maybe_compile_repeated_blocks(
+    module: torch.nn.Module,
+    model_config: DiffusionModelConfig,
+    engine_config: FSDPEngineConfig,
+) -> None:
+    """Regionally compile repeated diffusion blocks before FSDP2 mutates them."""
+    if not model_config.use_torch_compile:
+        return
+    if engine_config.strategy == "fsdp":
+        # Regional compilation has not been validated with this engine's FSDP1
+        # path, so reject the combination as a whole. ``use_orig_params=True``
+        # is a necessary prerequisite for eventually enabling FSDP1 with
+        # torch.compile, but satisfying it alone would not make the currently
+        # untested integration supported.
+        raise NotImplementedError(
+            "Diffusion regional torch.compile does not yet support FSDP1 because that integration has not "
+            "been validated. FSDP1 would also require use_orig_params=True. Use strategy=fsdp2 or disable "
+            "model.use_torch_compile."
+        )
+    if engine_config.strategy != "fsdp2":
+        raise NotImplementedError(
+            f"Diffusion regional torch.compile does not support strategy={engine_config.strategy!r}; use FSDP2."
+        )
+
+    # Regional compilation has not been validated with Ulysses SP, so reject
+    # the combination as a whole. Ulysses places SP collectives inside each
+    # compiled block. Enabling it requires distributed validation that Dynamo,
+    # Inductor, and AOTAutograd preserve the SP all-to-all participation and
+    # ordering in the original forward, activation-checkpoint recomputation,
+    # and backward while FSDP2 independently schedules parameter all-gathers
+    # and gradient reduce-scatters. Rank-specific graph breaks, guard misses,
+    # or recompilation could otherwise make ranks enter SP and DP collectives
+    # in different orders and hang the job.
+    if engine_config.ulysses_sequence_parallel_size != 1:
+        raise NotImplementedError(
+            "Diffusion regional torch.compile does not yet support Ulysses SP because that distributed "
+            "integration has not been validated. Use ulysses_sequence_parallel_size=1 or disable "
+            "model.use_torch_compile."
+        )
+    options = dict(model_config.torch_compile_options or {})
+    logger.info("Compiling repeated %s blocks with options=%s", type(module).__name__, options)
+    module.compile_repeated_blocks(**options)
+
+
 class DiffusersFSDPEngine(LoRAAdapterMixin, BaseEngine, ABC):
     """Base Diffusers engine using PyTorch FullyShardedDataParallel (FSDP).
 
@@ -482,6 +526,12 @@ class DiffusersFSDPEngine(LoRAAdapterMixin, BaseEngine, ABC):
             module.enable_parallelism(
                 config=ContextParallelConfig(ulysses_degree=sp_size, mesh=self.ulysses_device_mesh)
             )
+
+        # Compile only after all structural/trainability mutations and before
+        # FSDP2 registers its per-block sharding hooks. Diffusers activation
+        # checkpointing calls block.__call__, so recomputation also uses the
+        # compiled regional forward/backward.
+        _maybe_compile_repeated_blocks(module, self.model_config, self.engine_config)
 
         # Load diffusion scheduler
         scheduler = self._build_scheduler()
