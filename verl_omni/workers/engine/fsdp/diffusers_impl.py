@@ -121,16 +121,20 @@ def _keep_varlen_attention_metadata_eager() -> None:
        expression, then fails while multiplying a FakeTensor by a symbolic
        Node.
     2. For masked keys, Diffusers derives ``max_seqlen_k`` from Tensor data
-       with ``seqlens_k.max().item()``. In a compiled graph this becomes an
-       unbacked SymInt, but FA3's fake backward uses it in Python control flow
-       to select window, kernel, and workspace behavior, which raises
-       ``GuardOnDataDependentSymNode``.
+       with ``seqlens_k.max().item()``. When Dynamo captures scalar outputs to
+       keep this preparation in the graph, that value becomes an unbacked
+       SymInt. FA3's fake backward uses it in Python control flow to select
+       window, kernel, and workspace behavior, which raises
+       ``GuardOnDataDependentSymNode``. With ``fullgraph=False`` Dynamo may
+       instead break earlier, but that incidental break is not an FA3 contract.
 
     ``fullgraph=False`` does not avoid the Inductor lowering failure by
     itself. This eager boundary bypasses the faulty cumsum rewrite and
     materializes ``max_seqlen_q/k`` as concrete Python integers. Dynamo then
     resumes tracing, so token packing, the FA3 custom op, and the rest of the
     repeated transformer block remain eligible for regional compilation.
+    The same eager boundary protects against both failures and must remain
+    while either one is reproducible.
 
     The patched names are private Diffusers APIs. Remove this workaround once
     upstream fixes both symbolic cumsum lowering and FA3's handling or
