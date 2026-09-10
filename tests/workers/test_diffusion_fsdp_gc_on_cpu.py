@@ -26,10 +26,10 @@ def make_engine(*, mode, train_gc=True, eval_gc=True, diagnostics=False):
     engine = object.__new__(PPODiffusersFSDPEngine)
     engine.engine_config = DiffusionFSDPEngineConfig(
         forward_only=False,
+        gc_diagnostics=diagnostics,
         gc_on_train_device_load=train_gc,
         gc_on_eval_device_load=eval_gc,
     )
-    engine.gc_diagnostics = diagnostics
     engine.optimizer = None
     engine.mode = mode
     return engine

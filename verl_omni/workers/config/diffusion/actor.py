@@ -39,7 +39,13 @@ __all__ = [
 
 @dataclass
 class DiffusionFSDPEngineConfig(FSDPEngineConfig):
+    _mutable_fields = FSDPEngineConfig._mutable_fields | {"gc_diagnostics"}
+
+    # Runtime copy of the global GC diagnostics switch; not a separate user setting.
+    gc_diagnostics: bool = False
+    # Python GC after loading the actor for training.
     gc_on_train_device_load: GCSetting = True
+    # Python GC after loading the actor for evaluation.
     gc_on_eval_device_load: GCSetting = True
 
     def __post_init__(self):

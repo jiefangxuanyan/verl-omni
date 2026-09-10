@@ -162,7 +162,6 @@ class TrainingWorker(Worker, DistProfilerExtension):
             engine_config=self.engine_config,
             optimizer_config=self.optimizer_config,
             checkpoint_config=self.checkpoint_config,
-            **self.config.extra_context,
         )
 
         # build dispatch info
@@ -701,8 +700,9 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 engine_config=actor_config.engine,
                 optimizer_config=actor_config.optim,
                 checkpoint_config=actor_config.checkpoint,
-                extra_context={"gc_diagnostics": self.gc_diagnostics} if is_diffusion else {},
             )
+            if hasattr(actor_training_config.engine_config, "gc_diagnostics"):
+                actor_training_config.engine_config.gc_diagnostics = self.gc_diagnostics
 
             if is_diffusion:
                 # Diffusion models don't use dynamic batching or token packing.
