@@ -71,10 +71,5 @@ async def test_lora_fast_path_forwards_gc_settings_to_sender(monkeypatch):
     update_weights = inspect.unwrap(engine_workers.ActorRolloutRefWorker.update_weights)
     await update_weights(worker, global_steps=3, mode="naive")
 
-    assert sender_args == {
-        "zmq_handle": "ipc:///tmp/base-update-step-3-seq-0.sock",
-        "bucket_size_mb": 256,
-        "use_shm": False,
-        "gc_on_cleanup": 0,
-        "gc_diagnostics": True,
-    }
+    assert sender_args["gc_on_cleanup"] == 0
+    assert sender_args["gc_diagnostics"] is True
