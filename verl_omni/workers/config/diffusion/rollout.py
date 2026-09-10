@@ -149,6 +149,7 @@ class DiffusionRolloutConfig(BaseConfig):
     # Default FLASH_ATTN_3_HUB pairs with actor attn_backend=_flash_3_varlen_hub.
     rollout_attn_backend: str = "FLASH_ATTN_3_HUB"
     free_cache_engine: bool = True
+    # Python GC after actor offload: True for full collection, False to disable, or a generation integer.
     gc_on_actor_offload: GCSetting = True
     data_parallel_size: int = 1
     expert_parallel_size: int = 1
