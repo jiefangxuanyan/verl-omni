@@ -967,11 +967,14 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         start = time.perf_counter()
         if self.actor.engine.is_param_offload_enabled:
             self.actor.engine.to("cpu", model=True, optimizer=False, grad=False)
-        aggressive_empty_cache(
-            force_sync=True,
-            gc_setting=self.config.rollout.gc_on_actor_offload,
-            gc_diagnostics_point="actor_offload" if self.gc_diagnostics else None,
-        )
+        if "gc_on_actor_offload" in self.config.rollout:
+            aggressive_empty_cache(
+                force_sync=True,
+                gc_setting=self.config.rollout.gc_on_actor_offload,
+                gc_diagnostics_point="actor_offload" if self.gc_diagnostics else None,
+            )
+        else:
+            aggressive_empty_cache(force_sync=True)
         if timings is not None:
             timings["offload_actor_to_cpu"] = time.perf_counter() - start
 

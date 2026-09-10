@@ -732,24 +732,25 @@ class DiffusersFSDPEngine(LoRAAdapterMixin, BaseEngine, ABC):
 
         assert device in (device_name, "cpu")
         if device == device_name:
-            if self.mode not in ("train", "eval"):
-                raise RuntimeError(
-                    f"Loading {type(self).__name__} onto {device_name} requires a train or eval context, "
-                    f"but current mode is {self.mode!r}."
-                )
+            if self.mode not in (None, "train", "eval"):
+                raise RuntimeError(f"Unexpected {type(self).__name__} mode: {self.mode!r}")
             if model:
                 load_fsdp_model_to_gpu(self.module)
             if optimizer and self.optimizer is not None:
                 load_fsdp_optimizer(self.optimizer, device)
-            gc_setting = (
-                self.engine_config.gc_on_train_device_load
-                if self.mode == "train"
-                else self.engine_config.gc_on_eval_device_load
-            )
-            collect_garbage(
-                gc_setting,
-                diagnostics_point=f"{self.mode}_device_load" if self.gc_diagnostics else None,
-            )
+            if self.mode in ("train", "eval"):
+                gc_setting = (
+                    self.engine_config.gc_on_train_device_load
+                    if self.mode == "train"
+                    else self.engine_config.gc_on_eval_device_load
+                )
+                collect_garbage(
+                    gc_setting,
+                    diagnostics_point=f"{self.mode}_device_load" if self.gc_diagnostics else None,
+                )
+            elif self.mode is None:
+                # Manual loads are not associated with a train/eval GC point.
+                collect_garbage()
         elif device == "cpu":
             if model:
                 offload_fsdp_model_to_cpu(self.module)
