@@ -49,7 +49,7 @@ from diffusers.models import attention_dispatch
 from torch._inductor.exc import InductorError
 from torch.fx.experimental.symbolic_shapes import has_free_unbacked_symbols
 
-from verl_omni.workers.engine.fsdp.diffusers_impl import _keep_varlen_attention_metadata_eager
+from verl_omni.utils.diffusion_compile import _keep_varlen_attention_metadata_eager
 
 _HELPER_NAMES = (
     "_prepare_for_flash_attn_or_sage_varlen_with_mask",

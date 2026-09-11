@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from verl_omni.workers.engine.fsdp.diffusers_impl import _maybe_compile_repeated_blocks
+from verl_omni.utils.diffusion_compile import _maybe_compile_repeated_blocks
 
 
 class _RegionalCompileModel(torch.nn.Module):
@@ -41,15 +41,26 @@ def _engine_config(*, strategy: str = "fsdp2", sp_size: int = 1):
     return SimpleNamespace(strategy=strategy, ulysses_sequence_parallel_size=sp_size)
 
 
-def test_regional_compile_skips_disabled_model():
+@pytest.fixture(autouse=True)
+def eager_boundary_calls(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "verl_omni.utils.diffusion_compile._keep_varlen_attention_metadata_eager",
+        lambda: calls.append(True),
+    )
+    return calls
+
+
+def test_regional_compile_skips_disabled_model(eager_boundary_calls):
     model = _RegionalCompileModel()
 
     _maybe_compile_repeated_blocks(model, _model_config(enabled=False), _engine_config())
 
     assert model.compile_calls == []
+    assert eager_boundary_calls == []
 
 
-def test_regional_compile_forwards_options_without_mutating_them():
+def test_regional_compile_forwards_options_without_mutating_them(eager_boundary_calls):
     model = _RegionalCompileModel()
     options = {"backend": "inductor", "mode": "default", "fullgraph": True, "dynamic": False}
 
@@ -57,6 +68,7 @@ def test_regional_compile_forwards_options_without_mutating_them():
 
     assert model.compile_calls == [options]
     assert options == {"backend": "inductor", "mode": "default", "fullgraph": True, "dynamic": False}
+    assert eager_boundary_calls == [True]
 
 
 @pytest.mark.parametrize(
