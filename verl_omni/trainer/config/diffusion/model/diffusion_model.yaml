@@ -48,10 +48,10 @@ attn_backend: _flash_3_varlen_hub
 # Whether to compile repeated diffusion transformer blocks before FSDP2 sharding.
 # Currently requires Ulysses SP=1 because SP collectives inside a full block graph,
 # checkpoint recomputation, and FSDP2 DP collectives need distributed ordering validation.
-use_torch_compile: False
+use_regional_compile: False
 
 # Keyword arguments forwarded to Diffusers ``compile_repeated_blocks``.
-torch_compile_options:
+regional_compile_options:
 
   # Compiler backend used for regional compilation.
   backend: inductor

@@ -77,7 +77,7 @@ def _maybe_compile_repeated_blocks(
     engine_config: FSDPEngineConfig,
 ) -> None:
     """Regionally compile repeated diffusion blocks before FSDP2 mutates them."""
-    if not model_config.use_torch_compile:
+    if not model_config.use_regional_compile:
         return
     if engine_config.strategy == "fsdp":
         # Regional compilation has not been validated with this engine's FSDP1
@@ -88,7 +88,7 @@ def _maybe_compile_repeated_blocks(
         raise NotImplementedError(
             "Diffusion regional torch.compile does not yet support FSDP1 because that integration has not "
             "been validated. FSDP1 would also require use_orig_params=True. Use strategy=fsdp2 or disable "
-            "model.use_torch_compile."
+            "model.use_regional_compile."
         )
     if engine_config.strategy != "fsdp2":
         raise NotImplementedError(
@@ -108,9 +108,9 @@ def _maybe_compile_repeated_blocks(
         raise NotImplementedError(
             "Diffusion regional torch.compile does not yet support Ulysses SP because that distributed "
             "integration has not been validated. Use ulysses_sequence_parallel_size=1 or disable "
-            "model.use_torch_compile."
+            "model.use_regional_compile."
         )
     _keep_varlen_attention_metadata_eager()
-    options = dict(model_config.torch_compile_options or {})
+    options = dict(model_config.regional_compile_options or {})
     logger.info("Compiling repeated %s blocks with options=%s", type(module).__name__, options)
     module.compile_repeated_blocks(**options)

@@ -32,8 +32,8 @@ class _RegionalCompileModel(torch.nn.Module):
 
 def _model_config(*, enabled: bool, options=None):
     return SimpleNamespace(
-        use_torch_compile=enabled,
-        torch_compile_options={"backend": "inductor", "fullgraph": True} if options is None else options,
+        use_regional_compile=enabled,
+        regional_compile_options={"backend": "inductor", "fullgraph": True} if options is None else options,
     )
 
 

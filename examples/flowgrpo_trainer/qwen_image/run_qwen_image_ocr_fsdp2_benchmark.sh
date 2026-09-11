@@ -8,7 +8,7 @@
 # regional torch.compile while retaining Hub FA3 for actor training and rollout.
 # Graph breaks are allowed so third-party attention preprocessing can stay eager
 # without requiring coordinated compiler, Diffusers, and FA3 patches. Append
-# actor_rollout_ref.model.use_torch_compile=False to compare against eager
+# actor_rollout_ref.model.use_regional_compile=False to compare against eager
 # execution. This benchmark disables checkpoint saving and periodic validation.
 #
 # Keep recompiles shared because regional compilation invokes torch.compile
@@ -29,8 +29,8 @@ echo "Using TORCH_LOGS=$TORCH_LOGS for torch.compile diagnostics."
 NUM_GPUS=$NUM_GPUS NUM_NODES=$NUM_NODES bash "$SCRIPT_DIR/run_qwen_image_ocr.sh" \
     actor_rollout_ref.actor.strategy=fsdp2 \
     actor_rollout_ref.actor.fsdp_config.forward_prefetch=True \
-    actor_rollout_ref.model.use_torch_compile=True \
-    'actor_rollout_ref.model.torch_compile_options={backend:inductor,mode:default,fullgraph:false,dynamic:true}' \
+    actor_rollout_ref.model.use_regional_compile=True \
+    'actor_rollout_ref.model.regional_compile_options={backend:inductor,mode:default,fullgraph:false,dynamic:true}' \
     actor_rollout_ref.rollout.step_execution=True \
     reward.num_workers=$((NUM_GPUS / REWARD_TP)) \
     reward.reward_model.rollout.tensor_model_parallel_size=$REWARD_TP \
