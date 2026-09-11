@@ -42,7 +42,6 @@ on:
     paths:
       - "verl_omni/**"
       - "tests/nightly/**"
-      - "tests/workers/test_flash_attention_3_fake_backward.py"
       - "pyproject.toml"
       - ".github/workflows/l3_nightly.yml"
       - ".github/vllm_omni_pin.txt"
@@ -190,10 +189,6 @@ jobs:
           if ! command -v python >/dev/null 2>&1; then
             ln -sfn "$(command -v python3)" /usr/local/bin/python
           fi
-
-      - name: Validate the Hub FA3 backward fake contract
-        run: |
-          python3 -m pytest -q tests/workers/test_flash_attention_3_fake_backward.py
 
       - name: Download L3 baseline from setup job
         if: env.RUN_MODE == 'nightly'

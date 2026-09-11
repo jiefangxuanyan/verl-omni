@@ -35,7 +35,7 @@ from torch.fx.experimental.symbolic_shapes import GuardOnDataDependentSymNode, S
 
 
 def _run_fa3_backward_fake(*, symbolic_max_seqlen_k: bool):
-    assert torch.cuda.is_available(), "The L3 FA3 contract test requires a CUDA runner."
+    assert torch.cuda.is_available(), "The FA3 contract test requires a CUDA runner."
     backend = attention_dispatch.AttentionBackendName._FLASH_3_VARLEN_HUB
     attention_dispatch._maybe_download_kernel_for_backend(backend)
     backward = attention_dispatch._HUB_KERNELS_REGISTRY[backend].wrapped_backward_fn
