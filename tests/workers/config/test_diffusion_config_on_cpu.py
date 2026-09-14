@@ -171,11 +171,6 @@ class TestDiffusionSamplingConfig:
 
 
 class TestDiffusionRolloutConfig:
-    @pytest.mark.parametrize("value", [-1, 1.5, "0", None])
-    def test_invalid_actor_offload_gc_setting_raises(self, value):
-        with pytest.raises(ValueError, match="gc_on_actor_offload must be a boolean or non-negative integer"):
-            DiffusionRolloutConfig(name="vllm_omni", gc_on_actor_offload=value)
-
     def test_prompt_embed_length_is_independent_from_encoder_length(self):
         pipeline = DiffusionPipelineConfig(max_sequence_length=256)
         cfg = DiffusionRolloutConfig(
@@ -323,37 +318,6 @@ class TestFSDPDiffusionActorConfig:
         assert actor_cfg.ppo_micro_batch_size_per_gpu == 4
         assert isinstance(actor_cfg.diffusion_loss, DiffusionLossConfig)
         assert isinstance(actor_cfg.fsdp_config, DiffusionFSDPEngineConfig)
-
-    def test_gc_overrides_via_hydra(self):
-        import os
-
-        from hydra import compose, initialize_config_dir
-        from verl.utils.config import omega_conf_to_dataclass
-
-        import verl_omni
-
-        config_dir = os.path.join(os.path.dirname(verl_omni.__file__), "trainer/config/diffusion/actor")
-        with initialize_config_dir(config_dir=config_dir, version_base=None):
-            cfg = compose(
-                config_name="dp_diffusion_actor",
-                overrides=[
-                    "strategy=fsdp2",
-                    "ppo_micro_batch_size_per_gpu=4",
-                    "fsdp_config.gc_on_train_device_load=0",
-                    "fsdp_config.gc_on_eval_device_load=false",
-                ],
-            )
-        actor_cfg: FSDPDiffusionActorConfig = omega_conf_to_dataclass(cfg)
-
-        assert actor_cfg.fsdp_config.gc_on_train_device_load == 0
-        assert actor_cfg.fsdp_config.gc_on_train_device_load is not False
-        assert actor_cfg.fsdp_config.gc_on_eval_device_load is False
-
-    @pytest.mark.parametrize("field_name", ["gc_on_train_device_load", "gc_on_eval_device_load"])
-    @pytest.mark.parametrize("value", [-1, 1.5, "0", None])
-    def test_invalid_gc_setting_raises(self, field_name, value):
-        with pytest.raises(ValueError, match=f"{field_name} must be a boolean or non-negative integer"):
-            DiffusionFSDPEngineConfig(**{field_name: value})
 
     def test_engine_strategy_synced(self):
         """After __post_init__, engine.strategy must mirror actor.strategy."""

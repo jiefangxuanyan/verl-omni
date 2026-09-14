@@ -737,15 +737,12 @@ class DiffusersFSDPEngine(LoRAAdapterMixin, BaseEngine, ABC):
             if optimizer and self.optimizer is not None:
                 load_fsdp_optimizer(self.optimizer, device)
             if self.mode in ("train", "eval"):
-                gc_setting = (
-                    self.engine_config.gc_on_train_device_load
-                    if self.mode == "train"
-                    else self.engine_config.gc_on_eval_device_load
-                )
-                collect_garbage(
-                    gc_setting,
-                    diagnostics_point=(f"{self.mode}_device_load" if self.engine_config.gc_diagnostics else None),
-                )
+                # Preserve the historical full collection unless regional compile is active.
+                # Compiled diffusion training skips these per-step device-transition collections.
+                if not self.model_config.use_regional_compile:
+                    collect_garbage(
+                        diagnostics_point=(f"{self.mode}_device_load" if self.engine_config.gc_diagnostics else None),
+                    )
             elif self.mode is None:
                 # Manual loads are not associated with a train/eval GC point.
                 collect_garbage()

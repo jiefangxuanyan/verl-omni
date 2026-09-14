@@ -52,9 +52,3 @@ strategy: fsdp
 
 # Mixed precision training param dtype. Options: ["bfloat16", "float16"]
 dtype: bfloat16
-
-# Python GC after the training load: true for full collection, false to disable, or a generation integer
-gc_on_train_device_load: true
-
-# Python GC after the evaluation load: true for full collection, false to disable, or a generation integer
-gc_on_eval_device_load: true

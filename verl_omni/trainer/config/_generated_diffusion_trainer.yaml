@@ -42,8 +42,6 @@ actor_rollout_ref:
       forward_only: false
       strategy: fsdp
       dtype: bfloat16
-      gc_on_train_device_load: true
-      gc_on_eval_device_load: true
     profiler:
       _target_: verl.utils.profiler.ProfilerConfig
       tool: torch
@@ -132,8 +130,6 @@ actor_rollout_ref:
       forward_only: true
       strategy: fsdp
       dtype: bfloat16
-      gc_on_train_device_load: true
-      gc_on_eval_device_load: true
     profiler:
       _target_: verl.utils.profiler.ProfilerConfig
       tool: torch
@@ -193,7 +189,6 @@ actor_rollout_ref:
     enforce_eager: false
     cudagraph_capture_sizes: null
     free_cache_engine: true
-    gc_on_actor_offload: true
     tensor_model_parallel_size: 2
     text_encoder_tp_size: 1
     data_parallel_size: 1
@@ -288,7 +283,6 @@ actor_rollout_ref:
       _target_: verl.workers.config.CheckpointEngineConfig
       backend: naive
       update_weights_bucket_megabytes: 2048
-      gc_on_weight_transfer_cleanup: true
       engine_kwargs: {}
       custom_backend_module: null
     skip_tokenizer_init: true
@@ -316,6 +310,12 @@ actor_rollout_ref:
     config_path: null
     transformer_subfolder: transformer
     attn_backend: _flash_3_varlen_hub
+    use_regional_compile: false
+    regional_compile_options:
+      backend: inductor
+      mode: default
+      fullgraph: false
+      dynamic: true
     lora_rank: 0
     lora_alpha: 64
     lora_init_weights: gaussian

@@ -1003,14 +1003,18 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         start = time.perf_counter()
         if self.actor.engine.is_param_offload_enabled:
             self.actor.engine.to("cpu", model=True, optimizer=False, grad=False)
-        if "gc_on_actor_offload" in self.config.rollout:
+        gc_diagnostics_point = "actor_offload" if self.gc_diagnostics else None
+        if self.config.model.get("use_regional_compile"):
             aggressive_empty_cache(
                 force_sync=True,
-                gc_setting=self.config.rollout.gc_on_actor_offload,
-                gc_diagnostics_point="actor_offload" if self.gc_diagnostics else None,
+                gc_setting=False,
+                gc_diagnostics_point=gc_diagnostics_point,
             )
         else:
-            aggressive_empty_cache(force_sync=True)
+            aggressive_empty_cache(
+                force_sync=True,
+                gc_diagnostics_point=gc_diagnostics_point,
+            )
         if timings is not None:
             timings["offload_actor_to_cpu"] = time.perf_counter() - start
 
@@ -1100,6 +1104,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         # Per-component wall-clock timings (seconds) for monitoring.
         timings: dict[str, float] = {}
         update_weights_start = time.perf_counter()
+        weight_transfer_gc_kwargs = {"gc_on_cleanup": 1} if self.config.model.use_regional_compile else {}
 
         set_expandable_segments(False)
         log_gpu_memory_usage("Before resume weights", logger=logger)
@@ -1171,8 +1176,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 zmq_handle=zmq_handle,
                 bucket_size_mb=bucket_size_mb,
                 use_shm=self.rollout.use_shm,
-                gc_on_cleanup=self.config.rollout.checkpoint_engine.gc_on_weight_transfer_cleanup,
                 gc_diagnostics=self.gc_diagnostics,
+                **weight_transfer_gc_kwargs,
             )
             with RLInsightLogger.trace_state("update_weights", state_lane_id=f"rank_{self.rank}"):
                 await sender.async_send_weights(lora_weights.items())
@@ -1217,6 +1222,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                     base_sync_done=False,
                     global_steps=global_steps,
                     gc_diagnostics=self.gc_diagnostics,
+                    **weight_transfer_gc_kwargs,
                 )
 
             with RLInsightLogger.trace_state("update_weights", state_lane_id=f"rank_{self.rank}"):
@@ -1226,6 +1232,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                     base_sync_done=True,
                     global_steps=global_steps,
                     gc_diagnostics=self.gc_diagnostics,
+                    **weight_transfer_gc_kwargs,
                 )
 
         log_gpu_memory_usage("After update_weights", logger=logger)
