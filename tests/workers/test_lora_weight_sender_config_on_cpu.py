@@ -56,7 +56,7 @@ async def test_lora_fast_path_uses_regional_compile_gc_policy(monkeypatch, regio
     )
     worker = SimpleNamespace(
         config=SimpleNamespace(
-            model=SimpleNamespace(use_regional_compile=regional_compile),
+            model={"use_regional_compile": regional_compile},
             rollout=rollout_config,
         ),
         gc_diagnostics=True,
@@ -99,7 +99,7 @@ async def test_standard_weight_sync_uses_regional_compile_gc_policy(
     rollout = SimpleNamespace(update_weights=AsyncMock())
     worker = SimpleNamespace(
         config=SimpleNamespace(
-            model=SimpleNamespace(use_regional_compile=regional_compile),
+            model={"use_regional_compile": regional_compile},
             rollout=SimpleNamespace(
                 checkpoint_engine=SimpleNamespace(backend="naive"),
                 free_cache_engine=False,

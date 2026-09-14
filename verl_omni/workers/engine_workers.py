@@ -1104,7 +1104,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         # Per-component wall-clock timings (seconds) for monitoring.
         timings: dict[str, float] = {}
         update_weights_start = time.perf_counter()
-        weight_transfer_gc_kwargs = {"gc_on_cleanup": 1} if self.config.model.use_regional_compile else {}
+        weight_transfer_gc_kwargs = {"gc_on_cleanup": 1} if self.config.model.get("use_regional_compile") else {}
 
         set_expandable_segments(False)
         log_gpu_memory_usage("Before resume weights", logger=logger)
