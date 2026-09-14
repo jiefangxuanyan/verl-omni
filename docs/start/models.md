@@ -118,7 +118,12 @@ alignment and does not directly enforce source-image preservation.
 
 | Trainer | Example script | GPU config |
 |---------|---------------|------------|
-| DanceGRPO (HPSv3) | `examples/dancegrpo_trainer/wan22/run_wan22_5b_t2v_hpsv3_auto.sh` | 8×GPU or 16×NPU (auto-detect) |
+| DanceGRPO (HPSv3, V1 sync) | `examples/dancegrpo_trainer/wan22/run_wan22_5b_t2v_hpsv3_v1.sh` | 8×GPU |
+| DanceGRPO (HPSv3, v0, NPU) | `examples/dancegrpo_trainer/wan22/run_wan22_5b_t2v_hpsv3_auto.sh` | 16×NPU (Ascend 800T A2) |
+
+The CUDA default is the V1 sync recipe (`main_diffusion_v1`, TransferQueue).
+The v0 auto-detect launcher is **deprecated** for CUDA and remains for NPU
+until a V1 NPU recipe lands.
 
 **Reward model:** HPSv3 (Human Preference Score v3) — local safetensors checkpoint
 placed at `$WORKSPACE/CKPT/HPSv3/HPSv3.safetensors`.
@@ -222,7 +227,6 @@ For version requirements and detailed setup instructions, see
 | GSPO (text) | `examples/gspo_trainer/qwen3_omni/run_qwen3_omni_thinker_gspo_lora_v1.sh` | 4×H100/H200 80GB |
 | GSPO (image) | `examples/gspo_trainer/qwen3_omni/run_qwen3_omni_thinker_gspo_lora_mmk12_v1.sh` | 4×H100/H200 80GB |
 | GSPO (AVQA, NPU) | `examples/gspo_trainer/qwen3_omni/run_qwen3_omni_thinker_gspo_npu_avqa_v1.sh` | 16×NPU (Atlas 800T A3) |
-| GSPO (full, NPU) | `examples/gspo_trainer/qwen3_omni/run_qwen3_omni_thinker_gspo_npu.sh` | 16×NPU (Atlas 800T A3) |
 | Offline DPO (LoRA) | `examples/dpo_trainer/qwen3_omni/qwen3_omni/run_qwen3_omni_omni_preference_lora.sh` | 4×H800 |
 | [GSPO OPD (image, NPU)](../algo/omni_opd.md) | `examples/gspo_trainer/qwen3_omni/run_qwen3_omni_thinker_gspo_lora_mmk12_v1_opd_npu.sh` | 32×NPU (2 x Atlas 800T A3) |
 
