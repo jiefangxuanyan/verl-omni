@@ -34,7 +34,7 @@ from verl.single_controller.base.decorator import Dispatch, make_nd_compute_data
 from verl.trainer.distillation import distillation_ppo_loss, is_distillation_enabled
 from verl.utils import tensordict_utils as tu
 from verl.utils.config import omega_conf_to_dataclass
-from verl.utils.device import get_device_name, is_npu_available, set_expandable_segments
+from verl.utils.device import get_device_name, get_torch_device, is_npu_available, set_expandable_segments
 from verl.utils.distributed import initialize_global_process_group_ray, set_numa_affinity
 from verl.utils.flops_counter import FlopsCounter
 from verl.utils.import_utils import import_external_libs
@@ -571,9 +571,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
     ):
         Worker.__init__(self)
         self.config = config
-        self.gc_diagnostics = config.get("gc_diagnostics", False)
-        if not isinstance(self.gc_diagnostics, bool):
-            raise ValueError(f"gc_diagnostics must be a boolean, got {self.gc_diagnostics!r}")
         self.distillation_config = distillation_config
         self.distillation_enabled = is_distillation_enabled(distillation_config)
         self.teacher_key = teacher_key
@@ -702,8 +699,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 optimizer_config=actor_config.optim,
                 checkpoint_config=actor_config.checkpoint,
             )
-            if hasattr(actor_training_config.engine_config, "gc_diagnostics"):
-                actor_training_config.engine_config.gc_diagnostics = self.gc_diagnostics
 
             if is_diffusion:
                 # Diffusion models don't use dynamic batching or token packing.
@@ -1003,18 +998,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         start = time.perf_counter()
         if self.actor.engine.is_param_offload_enabled:
             self.actor.engine.to("cpu", model=True, optimizer=False, grad=False)
-        gc_diagnostics_point = "actor_offload" if self.gc_diagnostics else None
-        if self.config.model.get("use_regional_compile"):
-            aggressive_empty_cache(
-                force_sync=True,
-                gc_setting=False,
-                gc_diagnostics_point=gc_diagnostics_point,
-            )
-        else:
-            aggressive_empty_cache(
-                force_sync=True,
-                gc_diagnostics_point=gc_diagnostics_point,
-            )
+        get_torch_device().synchronize()
+        get_torch_device().empty_cache()
         if timings is not None:
             timings["offload_actor_to_cpu"] = time.perf_counter() - start
 
@@ -1104,7 +1089,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         # Per-component wall-clock timings (seconds) for monitoring.
         timings: dict[str, float] = {}
         update_weights_start = time.perf_counter()
-        weight_transfer_gc_kwargs = {"gc_on_cleanup": 1} if self.config.model.get("use_regional_compile") else {}
 
         set_expandable_segments(False)
         log_gpu_memory_usage("Before resume weights", logger=logger)
@@ -1176,8 +1160,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 zmq_handle=zmq_handle,
                 bucket_size_mb=bucket_size_mb,
                 use_shm=self.rollout.use_shm,
-                gc_diagnostics=self.gc_diagnostics,
-                **weight_transfer_gc_kwargs,
             )
             with RLInsightLogger.trace_state("update_weights", state_lane_id=f"rank_{self.rank}"):
                 await sender.async_send_weights(lora_weights.items())
@@ -1217,22 +1199,12 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                     adapter_name=self.rollout_adapter,
                 )
                 await self.rollout.update_weights(
-                    per_tensor_param_base,
-                    peft_config=peft_config,
-                    base_sync_done=False,
-                    global_steps=global_steps,
-                    gc_diagnostics=self.gc_diagnostics,
-                    **weight_transfer_gc_kwargs,
+                    per_tensor_param_base, peft_config=peft_config, base_sync_done=False, global_steps=global_steps
                 )
 
             with RLInsightLogger.trace_state("update_weights", state_lane_id=f"rank_{self.rank}"):
                 await self.rollout.update_weights(
-                    per_tensor_param,
-                    peft_config=peft_config,
-                    base_sync_done=True,
-                    global_steps=global_steps,
-                    gc_diagnostics=self.gc_diagnostics,
-                    **weight_transfer_gc_kwargs,
+                    per_tensor_param, peft_config=peft_config, base_sync_done=True, global_steps=global_steps
                 )
 
         log_gpu_memory_usage("After update_weights", logger=logger)
@@ -1244,6 +1216,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             await offload_task
         elif not offloaded:
             self._offload_actor_and_empty_cache(timings)
+        log_gpu_memory_usage("After offload model to cpu", logger=logger)
 
         # 5. resume kv_cache
         if self.config.rollout.free_cache_engine:

@@ -521,7 +521,6 @@ actor_rollout_ref:
     max_audio_tokens: null
     max_video_tokens: null
   hybrid_engine: false
-  gc_diagnostics: false
   nccl_timeout: 600
 data:
   tokenizer: null

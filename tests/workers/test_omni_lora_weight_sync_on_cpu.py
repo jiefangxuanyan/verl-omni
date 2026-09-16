@@ -50,14 +50,12 @@ def _fast_path_worker(rollout_rank=0):
     worker.rollout = rollout
 
     worker.config = SimpleNamespace(
-        model={},
         rollout=SimpleNamespace(
             free_cache_engine=False,
             checkpoint_engine=SimpleNamespace(backend="naive", update_weights_bucket_megabytes=16),
-        ),
+        )
     )
     worker._rank = 0
-    worker.gc_diagnostics = False
     worker.peft_merge = False
     worker.base_sync_done = True
     worker.layered_summon = False

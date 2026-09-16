@@ -17,7 +17,6 @@ import pytest
 
 from verl_omni.trainer.config.algorithm import DiffusionAlgoConfig
 from verl_omni.workers.config.diffusion.actor import (
-    DiffusionFSDPEngineConfig,
     DiffusionLossConfig,
     FSDPDiffusionActorConfig,
 )
@@ -290,7 +289,7 @@ class TestDiffusionModelConfigPolicyAdapters:
 
 
 # ---------------------------------------------------------------------------
-# FSDPDiffusionActorConfig
+# FSDPDiffusionActorConfig (instantiation via Hydra / omega_conf)
 # ---------------------------------------------------------------------------
 
 
@@ -317,7 +316,6 @@ class TestFSDPDiffusionActorConfig:
         assert actor_cfg.strategy == "fsdp"
         assert actor_cfg.ppo_micro_batch_size_per_gpu == 4
         assert isinstance(actor_cfg.diffusion_loss, DiffusionLossConfig)
-        assert isinstance(actor_cfg.fsdp_config, DiffusionFSDPEngineConfig)
 
     def test_engine_strategy_synced(self):
         """After __post_init__, engine.strategy must mirror actor.strategy."""
