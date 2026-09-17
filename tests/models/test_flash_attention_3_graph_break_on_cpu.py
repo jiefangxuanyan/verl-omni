@@ -16,14 +16,15 @@
 The workaround addresses two failures at the boundary between Diffusers and
 FA3. These tests keep that boundary observable without requiring FA3 or CUDA:
 
-* A custom op stands in for FA3 and records the symbolic ``max_seqlen_k`` seen
-  by a kernel during tracing. The surrounding preparation and dispatch remain
-  the real Diffusers implementation, so this checks behavior rather than its
-  source text.
+* Capturing Diffusers' data-dependent ``seqlens_k.max().item()`` produces an
+  unbacked ``max_seqlen_k`` that FA3 fake backward cannot use in Python control
+  flow. A custom op records the value seen at the real Diffusers dispatch
+  boundary without requiring FA3.
 * The same probe after installing the workaround verifies that the eager
   boundary materializes the value before tracing resumes.
-* A separate Inductor canary preserves evidence for the independent cumsum
-  lowering failure that originally required the eager boundary.
+* Independently, Inductor's ``pointless_cumsum_replacement`` cannot lower the
+  dynamic ``full(..., seq_len_q).cumsum()`` expression used for dense queries.
+  A real-Inductor canary preserves that failure evidence.
 
 Failure triage:
 

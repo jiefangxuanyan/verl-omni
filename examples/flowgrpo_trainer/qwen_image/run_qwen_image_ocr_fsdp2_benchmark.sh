@@ -38,7 +38,7 @@ NUM_GPUS=$NUM_GPUS NUM_NODES=$NUM_NODES bash "$SCRIPT_DIR/run_qwen_image_ocr.sh"
     reward.reward_model.rollout.max_num_seqs=128 \
     reward.reward_model.rollout.max_model_len=8192 \
     trainer.logger='["console", "tensorboard"]' \
-    trainer.experiment_name=qwen_image_ocr_8x80g_fsdp2_fa3_compile_graph_breaks_benchmark \
+    trainer.experiment_name=qwen_image_ocr_8x80g_fsdp2_benchmark \
     trainer.resume_mode=disable \
     trainer.save_freq=0 \
     trainer.test_freq=0 \
