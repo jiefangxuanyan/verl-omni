@@ -25,9 +25,6 @@ FA3. These tests keep that boundary observable without requiring FA3 or CUDA:
 * A separate Inductor canary preserves evidence for the independent cumsum
   lowering failure that originally required the eager boundary.
 
-The GPU contract tests then complete the chain by checking that the real Hub
-FA3 fake implementation rejects the unbacked value observed here.
-
 Failure triage:
 
 * If an unpatched canary starts passing, verify the real masked and unmasked
