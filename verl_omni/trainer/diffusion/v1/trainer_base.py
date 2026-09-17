@@ -149,8 +149,8 @@ class PolicyGradientDiffusionTrainerV1(ABC):
         self.use_teacher_policy = is_distillation_enabled(config.get("distillation"))
         self.distillation_config = omega_conf_to_dataclass(config.distillation) if self.use_teacher_policy else None
         validate_distillation_config(config)
-        if self.use_teacher_policy and self.trainer_mode != "sync":
-            raise NotImplementedError("distillation is only supported with trainer_mode='sync'")
+        self._teacher_one_step_off = self.use_teacher_policy and self.distillation_config.scheduler == "one_step_off"
+        self._pending_teacher_batch = None
         self.replay_buffer = self._build_replay_buffer()
 
         # ref_in_actor: reference policy is the actor without lora applied.
@@ -330,26 +330,66 @@ class PolicyGradientDiffusionTrainerV1(ABC):
 
     def _step_once(self, metrics: dict, timing_raw: dict, sample_batch_size: int) -> KVBatchMeta:
         """Sample one mini-batch from the replay buffer and run the diffusion PG pipeline."""
+        batch_meta = self._sample_batch(metrics, timing_raw, sample_batch_size)
+        if not self._teacher_one_step_off:
+            return self._train_sampled_batch(metrics, timing_raw, batch_meta)
+
+        # One-step-off: teacher scoring of the batch sampled here overlaps the actor
+        # update on the previously sampled batch. The first step samples twice to
+        # fill the pipeline; the last sampled batch is never trained.
+        prev, self._pending_teacher_batch = self._pending_teacher_batch, self._convert_and_dispatch(batch_meta)
+        if prev is None:
+            next_meta = self._sample_batch(metrics, timing_raw, sample_batch_size)
+            prev, self._pending_teacher_batch = self._pending_teacher_batch, self._convert_and_dispatch(next_meta)
+        batch_meta, data, teacher_handle = prev
+        return self._train_sampled_batch(metrics, timing_raw, batch_meta, data=data, teacher_handle=teacher_handle)
+
+    def _sample_batch(self, metrics: dict, timing_raw: dict, sample_batch_size: int) -> KVBatchMeta:
+        """Sample one mini-batch from the replay buffer inside the rollout-mode hooks."""
         with marked_timer("gen", timing_raw, color="red"):
             self.on_sample_begin()
             batch_meta, off_policy_metrics = self._sample_training_batch(sample_batch_size)
             metrics.update(off_policy_metrics)
             self.on_sample_end()
+        return batch_meta
 
-        return self._train_sampled_batch(metrics, timing_raw, batch_meta)
+    def _convert_and_dispatch(self, batch_meta: KVBatchMeta):
+        """Convert a sampled batch and start teacher scoring without waiting on it."""
+        data = diffusion_tq_batch_to_dataproto(batch_meta, pad_token_id=self.tokenizer.pad_token_id or 0)
+        return batch_meta, data, self.teacher_model_manager.dispatch_prev_sample_mean(data)
 
-    def _train_sampled_batch(self, metrics: dict, timing_raw: dict, batch_meta: KVBatchMeta) -> KVBatchMeta:
+    def _train_sampled_batch(
+        self,
+        metrics: dict,
+        timing_raw: dict,
+        batch_meta: KVBatchMeta,
+        data: DataProto | None = None,
+        teacher_handle=None,
+    ) -> KVBatchMeta:
         """Run one diffusion policy-gradient update on an already sampled mini-batch."""
         # Convert TQ rows to diffusion DataProto; from here on the driver owns the
         # DataProto compute contract (no KVBatchMeta passed to diffusion workers).
-        data = diffusion_tq_batch_to_dataproto(batch_meta, pad_token_id=self.tokenizer.pad_token_id or 0)
+        if data is None:
+            data = diffusion_tq_batch_to_dataproto(batch_meta, pad_token_id=self.tokenizer.pad_token_id or 0)
 
         # [OPTIONAL] colocated reward model
         if self.reward_loop_manager.reward_loop_worker_handles is None and self.use_rm:
             with marked_timer("reward", timing_raw, color="yellow"):
+                # Free rollout-engine GPU memory so the colocated RM fits.
                 self.checkpoint_manager.sleep_replicas()
                 data = data.union(self._compute_reward_colocate(data))
-                self.checkpoint_manager.update_weights(self.global_steps)
+                if self.trainer_mode != "sync":
+                    # Async modes have no guaranteed per-step wake of the
+                    # colocated replicas (separate_async's on_step_end only
+                    # syncs the standalone rollout, and switch_to_rollout is
+                    # not guaranteed to fire), so keep the mid-cycle wake+sync
+                    # or colocated generation stalls on stale weights.
+                    self.checkpoint_manager.update_weights(self.global_steps)
+                # In sync mode the replicas must stay asleep through the
+                # training phases below: update_weights resumes their weights
+                # (~55GB for Qwen-Image at rollout TP=1) and the actor update
+                # would OOM next to them. on_step_end wakes and weight-syncs
+                # for the next rollout.
 
         if self._is_direct_preference:
             return self._train_direct_preference_batch(metrics, timing_raw, batch_meta, data)
@@ -386,9 +426,14 @@ class PolicyGradientDiffusionTrainerV1(ABC):
                 data = data.union(ref_log_prob)
 
         if self.use_teacher_policy:
-            # score the rollout trajectories with the frozen teacher
-            with marked_timer("teacher", timing_raw, color="olive"):
-                data = data.union(self.teacher_model_manager.compute_prev_sample_mean(data))
+            if teacher_handle is not None:
+                # one-step-off: scoring was dispatched when this batch was sampled
+                with marked_timer("wait_prev_teacher", timing_raw, color="olive"):
+                    data = data.union(self.teacher_model_manager.collect_prev_sample_mean(teacher_handle))
+            else:
+                # score the rollout trajectories with the frozen teacher
+                with marked_timer("teacher", timing_raw, color="olive"):
+                    data = data.union(self.teacher_model_manager.compute_prev_sample_mean(data))
 
         with marked_timer("adv", timing_raw, color="brown"):
             data = self._compute_advantage(data)
